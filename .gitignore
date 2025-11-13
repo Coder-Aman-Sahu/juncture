@@ -1,0 +1,6 @@
+# Ignore all node_modules folders in any sub-directory
+node_modules
+
+# Ignore all .env files in any sub-directory
+# This also blocks .env.local, .env.production, etc.
+*.env
