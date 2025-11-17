@@ -1,64 +1,342 @@
-.meetVideoContainer {
-    display:relative;
-    height:100vh; 
-    background: rgb(1,4,48);
-
-}
-
-.meetUserVideo{
-    position:absolute;
-    bottom:10vh;
-    height:20vh;
-    width:auto;
-    left:0;
-    border-radius:20px;
-}
-
-.buttonContainers{
-    position:absolute;
-    width:100vw;
-    bottom:0;
-    text-align:center;
-}
-
-
-
-.conferenceView svg{
-    font-size:4rem;
-}
-
-.conferenceView{
+.meetPageContainer {
+    height: 100vh;
+    width: 100%;
+    background: linear-gradient(135deg, #121212 0%, #1a1a1a 100%);
+    color: white;
     display: flex;
-    padding:10px;
-    gap:10px;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
 }
 
-.conferenceView  video{
-    width:40vw;
-    height:20vh;
-    min-width:30vw;
-    border-radius:10px;
-
-
+/* Lobby */
+.lobbyContainer {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #f5f7fa;
+    color: #333;
 }
 
-.chatRoom{
-    position:absolute;
-    height:90vh;
-    right:0;
-    background:white;
-    border-radius:10px;
-    width:30vw;
-    bottom:10vh;
-    padding-inline:20px;
+.lobbyCard {
+    background: white;
+    padding: 3rem;
+    border-radius: 24px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    width: 420px;
+    max-width: 90%;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
-.chatContainer{
-    position:relative;
-    height:100%;
+.videoPreview {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #000;
+    border-radius: 16px;
+    margin: 1.5rem 0;
+    overflow: hidden;
 }
 
-.chattingArea{
-    position:absolute;
-    bottom:0;
+.videoPreview video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+}
+
+/* Conference Area */
+.conferenceContainer {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: relative;
+}
+
+.header {
+    height: 70px;
+    padding: 0 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0,0,0,0.2);
+    backdrop-filter: blur(10px);
+    z-index: 10;
+}
+
+.headerBrand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 700;
+    font-size: 1.2rem;
+    letter-spacing: 0.5px;
+}
+
+.meetingCode {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 8px 16px;
+    border-radius: 50px;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.meetingCode:hover { background: rgba(255,255,255,0.2); }
+
+/* Main Remote Grid */
+.mainGrid {
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+}
+
+.videoArea {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 10px; /* Reduced padding to save space */
+    transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    height: 100%; /* Ensure it takes full height */
+}
+
+.videoAreaShrink { margin-right: 360px; }
+
+.gridContainer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center; /* Centers single video vertically */
+    gap: 20px;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto; /* Scroll only if absolutely needed */
+}
+
+/* Fixed Video Wrapper */
+.videoWrapper {
+    position: relative;
+    flex: 1 1 400px; 
+    max-width: 100%;
+    /* LIMIT HEIGHT: Prevents single video from causing scroll */
+    max-height: calc(100vh - 180px); 
+    background: #202020;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.05);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.videoWrapper:hover {
+    border-color: rgba(255,255,255,0.3);
+    transform: translateY(-2px);
+}
+
+.videoWrapper video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Ensures video fits without cropping or scrolling */
+    background: black;
+}
+
+/* Hover Icon */
+.pinIcon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.6);
+    color: white;
+    padding: 15px;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 5;
+    pointer-events: none;
+}
+
+.videoWrapper:hover .pinIcon, .selfViewContainer:hover .pinIcon {
+    opacity: 1;
+}
+
+.displayName {
+    position: absolute;
+    bottom: 15px;
+    left: 15px;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: white;
+    z-index: 2;
+}
+
+.waitingMessage {
+    color: #aaa;
+    font-size: 1.2rem;
+}
+
+/* Self View - Picture in Picture */
+.selfViewContainer {
+    position: absolute;
+    bottom: 100px;
+    right: 20px;
+    width: 260px;
+    aspect-ratio: 16/9;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    border: 2px solid rgba(255,255,255,0.15);
+    z-index: 30;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+}
+
+.selfViewContainer:hover {
+    border-color: #fff;
+    transform: scale(1.02);
+}
+
+.selfViewShift { right: 380px; }
+
+.selfViewContainer video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+}
+
+.selfName {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(0,0,0,0.6);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* Chat Sidebar */
+.chatSidebar {
+    position: absolute;
+    top: 0;
+    right: -360px;
+    bottom: 0;
+    width: 360px;
+    background: #ffffff;
+    color: #1d1d1f;
+    display: flex;
+    flex-direction: column;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 20;
+    box-shadow: -5px 0 30px rgba(0,0,0,0.3);
+}
+
+.chatOpen { right: 0; }
+
+.chatHeader {
+    height: 70px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 1.5rem;
+    border-bottom: 1px solid #f0f0f0;
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+.chatBody {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: #fbfbfd;
+}
+
+.myMsg { align-self: flex-end; max-width: 85%; display: flex; flex-direction: column; align-items: flex-end; }
+.theirMsg { align-self: flex-start; max-width: 85%; }
+
+.msgBubble {
+    padding: 10px 16px;
+    border-radius: 18px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.myMsg .msgBubble { background: #000; color: white; border-bottom-right-radius: 4px; }
+.theirMsg .msgBubble { background: white; border: 1px solid #e5e5e5; color: #1d1d1f; border-bottom-left-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+
+.msgName { font-size: 0.75rem; color: #86868b; margin-bottom: 4px; margin-left: 4px; }
+
+.chatInput {
+    padding: 1.5rem;
+    background: white;
+    border-top: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Controls */
+.controls {
+    height: 90px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #121212;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    position: relative;
+    z-index: 25;
+}
+
+.controlsGroup {
+    display: flex;
+    gap: 1rem;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 10px 24px;
+    border-radius: 50px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(20px);
+}
+
+.btnDark { color: white !important; background: rgba(255,255,255,0.1) !important; width: 50px !important; height: 50px !important; transition: all 0.2s !important; }
+.btnDark:hover { background: rgba(255,255,255,0.2) !important; transform: translateY(-3px); }
+.btnActive { background: white !important; color: black !important; width: 50px !important; height: 50px !important; }
+.btnErr { background: #ff4757 !important; color: white !important; width: 50px !important; height: 50px !important; }
+.btnSuccess { background: #2ed573 !important; color: white !important; width: 50px !important; height: 50px !important; }
+.btnEnd { background: #ff4757 !important; color: white !important; width: 70px !important; height: 50px !important; border-radius: 30px !important; }
+
+/* Mobile */
+@media (max-width: 768px) {
+    .videoWrapper { flex: 1 1 100%; height: auto; }
+    .videoAreaShrink { margin-right: 0; display: none; }
+    .chatSidebar { width: 100%; right: -100%; }
+    .chatOpen { right: 0; }
+    .selfViewContainer { width: 100px; bottom: 100px; right: 10px; }
+    .selfViewShift { right: 10px; bottom: 180px; }
+    .controlsGroup { gap: 0.5rem; padding: 8px 16px; }
+    .btnDark, .btnErr, .btnSuccess, .btnActive { width: 40px !important; height: 40px !important; }
+    .header { padding: 0 1rem; }
 }

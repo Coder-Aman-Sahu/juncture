@@ -1,95 +1,125 @@
-.landingPageContainer{
-  width:100vw;
-  height:100vh;
-  background: url("/public/background.png");
-  background-repeat: no-repeat;
-  background-size: cover;
-  color:white;
-}
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
 
-.landingPageContainer nav{
-  padding-inline: 1.2rem;
-  padding-block:1.6rem;
-  display:flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.landingPageContainer nav h2{
-  font-size:1.8rem;
-  font-weight:500;
-}
-.landingPageContainer nav .navlist{
-  display:flex;
-  gap:1.6rem;
-  cursor:pointer;
-
-}
-
-.landingMainContainer{
-  display:flex;
-  justify-content:space-between;
-  padding-inline:3rem;
-  height:80vh;
-  align-items: center;
+:root {
+  /* -- Palette -- */
+  --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  --bg-body: #F5F5F7;
+  --surface: #ffffff;
+  --surface-glass: rgba(255, 255, 255, 0.7);
   
+  --text-main: #1d1d1f;
+  --text-muted: #86868b;
+  
+  --primary: #000000; /* Minimal Black accent */
+  --primary-hover: #333333;
+  --accent: #2980b9; /* Subtle tech blue, change if logo clashes */
+  
+  --border-radius: 24px;
+  --nav-height: 80px;
+  
+  --shadow-sm: 0 4px 20px rgba(0,0,0,0.05);
+  --shadow-lg: 0 20px 40px rgba(0,0,0,0.08);
 }
 
-
-.landingMainContainer > div:nth-child(1){
-  font-size:2.2rem;
+body {
+  margin: 0;
+  font-family: 'Outfit', sans-serif;
+  background-color: var(--bg-body);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
-.landingMainContainer>div:nth-child(1) div[role='button'] {
-  background: #D97500;
-  width: fit-content;
-  padding: 1rem;
-  border-radius: 20px;
-  margin-top: 1.9rem;
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: var(--surface-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: var(--shadow-lg);
 }
 
-.landingMainContainer>div:nth-child(1) div[role='button'] a {
-  text-decoration: none;
-  color: white;
-  font-size: 1.7rem;
-}
-
-.landingMainContainer > div:nth-child(2) img{
-  height:70vh;
-  width:auto;
-}
-
-
-.navBar{
-  display:flex;
-  align-items:center;
+/* Global Navbar */
+.navBar {
+  height: var(--nav-height);
+  display: flex;
   justify-content: space-between;
-  padding-right:20px;
-  text-align: center;
+  align-items: center;
+  padding: 0 2rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(0,0,0,0.03);
 }
 
-.meetContainer{
-  display:flex;
-  padding-inline:20px;
-  height:80vh;
-  gap:10vw;
-  justify-content: center;
-}
-
-.leftPanel {
-  height: 100%;
+.logoBox {
   display: flex;
   align-items: center;
-
+  gap: 12px;
+  text-decoration: none;
 }
 
-.rightPanel {
-  display: flex;
-  align-items: center;
+.logoImage {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
-.rightPanel > img {
-  width: 30vw;
-  height: auto;
-  border-radius: 20px;
+.logoText {
+  font-weight: 800;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+  color: var(--text-main);
+}
+
+/* Buttons */
+.btn-primary {
+  background: var(--primary) !important;
+  color: white !important;
+  border-radius: 50px !important; /* Pill shape */
+  padding: 10px 28px !important;
+  text-transform: none !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+  transition: transform 0.2s ease !important;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+}
+
+.btn-secondary {
+  color: var(--text-main) !important;
+  text-transform: none !important;
+  font-weight: 600 !important;
+  padding: 10px 24px !important;
+}
+
+.btn-secondary:hover {
+  background: rgba(0,0,0,0.05) !important;
+  border-radius: 50px !important;
+}
+
+/* Inputs */
+.input-minimal .MuiOutlinedInput-root {
+  border-radius: 16px !important;
+  background: rgba(245, 245, 247, 0.8);
+  transition: all 0.2s;
+}
+
+.input-minimal .MuiOutlinedInput-notchedOutline {
+  border: 1px solid transparent;
+}
+
+.input-minimal:hover .MuiOutlinedInput-notchedOutline {
+  border: 1px solid #e1e1e1;
+}
+
+.input-minimal .Mui-focused .MuiOutlinedInput-notchedOutline {
+  border: 1px solid var(--text-main) !important;
 }
