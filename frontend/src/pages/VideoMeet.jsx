@@ -14,14 +14,41 @@ import server from '../environment';
 
 const server_url = `${server}`;
 
-const connections = {};
 const peerConfigConnections = {
     "iceServers": [{ "urls": "stun:stun1.l.google.com:19302" }]
 }
 
+// HELPER COMPONENT: Prevents flickering by isolating video rendering
+// This only updates the video source if the 'stream' prop changes
+const VideoPlayer = ({ stream, username, isLocal = false, onPiP, isPiPMode }) => {
+    const videoRef = useRef(null);
+
+    useEffect(() => {
+        if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
+        }
+    }, [stream]);
+
+    return (
+        <div className={styles.videoWrapper} onClick={onPiP}>
+            {/* Only show PiP icon if passed */}
+            {onPiP && <div className={styles.pinIcon}>{isPiPMode ? <GridViewRounded /> : <PictureInPictureAltRounded />}</div>}
+            
+            <video ref={videoRef} autoPlay muted={isLocal} />
+            <div className={styles.displayName}>
+                {username || "User"} {isLocal && "(You)"}
+            </div>
+        </div>
+    );
+};
+
 export default function VideoMeetComponent() {
     const routeTo = useNavigate();
     const { url: meetingCode } = useParams();
+    
+    // FIX 2: Move connections INSIDE the component using useRef
+    // This ensures connections are cleared when you leave the page
+    const connectionsRef = useRef({});
     
     var socketRef = useRef();
     let socketIdRef = useRef();
@@ -48,12 +75,8 @@ export default function VideoMeetComponent() {
     
     let [videos, setVideos] = useState([]);
 
-    // Re-attach stream whenever localVideoRef changes
-    useEffect(() => {
-        if(localVideoRef.current && window.localStream) {
-            localVideoRef.current.srcObject = window.localStream;
-        }
-    });
+    // FIX 1 (Part A): Removed the `useEffect` that had no dependency array.
+    // We will handle local stream attachment inside the 'getPermissions' or the new VideoPlayer component.
 
     // Auto-scroll chat
     useEffect(() => {
@@ -79,6 +102,7 @@ export default function VideoMeetComponent() {
                 
                 if (userMediaStream) {
                     window.localStream = userMediaStream;
+                    // Manually set ref once initialized
                     if (localVideoRef.current) {
                         localVideoRef.current.srcObject = userMediaStream;
                     }
@@ -118,7 +142,8 @@ export default function VideoMeetComponent() {
                 const stream = await navigator.mediaDevices.getDisplayMedia({ cursor: true });
                 const screenTrack = stream.getVideoTracks()[0];
 
-                Object.values(connections).forEach(pc => {
+                // Update all peer connections with the screen track
+                Object.values(connectionsRef.current).forEach(pc => {
                     const sender = pc.getSenders().find(s => s.track.kind === 'video');
                     if(sender) sender.replaceTrack(screenTrack);
                 });
@@ -136,10 +161,12 @@ export default function VideoMeetComponent() {
     const stopScreenShare = () => {
         if(!window.localStream) return;
         const videoTrack = window.localStream.getVideoTracks()[0];
-        Object.values(connections).forEach(pc => {
+        
+        Object.values(connectionsRef.current).forEach(pc => {
             const sender = pc.getSenders().find(s => s.track.kind === 'video');
             if(sender) sender.replaceTrack(videoTrack);
         });
+        
         if(localVideoRef.current) localVideoRef.current.srcObject = window.localStream;
         setScreen(false);
     };
@@ -156,9 +183,7 @@ export default function VideoMeetComponent() {
         }
     };
 
-    // Copy Full URL Function
     const copyToClipboard = () => {
-        // Using window.location.href grabs the entire current URL (domain + path)
         navigator.clipboard.writeText(window.location.href);
     }
 
@@ -170,17 +195,17 @@ export default function VideoMeetComponent() {
             const signal = JSON.parse(message);
             if (fromId !== socketIdRef.current) {
                 if (signal.sdp) {
-                    connections[fromId].setRemoteDescription(new RTCSessionDescription(signal.sdp)).then(() => {
+                    connectionsRef.current[fromId].setRemoteDescription(new RTCSessionDescription(signal.sdp)).then(() => {
                         if (signal.sdp.type === 'offer') {
-                            connections[fromId].createAnswer().then((description) => {
-                                connections[fromId].setLocalDescription(description).then(() => {
-                                    socketRef.current.emit('signal', fromId, JSON.stringify({ 'sdp': connections[fromId].localDescription }))
+                            connectionsRef.current[fromId].createAnswer().then((description) => {
+                                connectionsRef.current[fromId].setLocalDescription(description).then(() => {
+                                    socketRef.current.emit('signal', fromId, JSON.stringify({ 'sdp': connectionsRef.current[fromId].localDescription }))
                                 });
                             });
                         }
                     });
                 }
-                if (signal.ice) connections[fromId].addIceCandidate(new RTCIceCandidate(signal.ice));
+                if (signal.ice) connectionsRef.current[fromId].addIceCandidate(new RTCIceCandidate(signal.ice));
             }
         });
 
@@ -195,7 +220,10 @@ export default function VideoMeetComponent() {
 
             socketRef.current.on("user-left", (id) => {
                 setVideos(prev => prev.filter(v => v.socketId !== id));
-                delete connections[id];
+                if (connectionsRef.current[id]) {
+                    connectionsRef.current[id].close();
+                    delete connectionsRef.current[id];
+                }
             });
 
             socketRef.current.on("user-joined", (id, clients) => {
@@ -204,12 +232,15 @@ export default function VideoMeetComponent() {
                     const targetName = client.username;
                     if (targetId === socketIdRef.current) return;
                     
-                    if (!connections[targetId]) {
-                        connections[targetId] = new RTCPeerConnection(peerConfigConnections);
-                        connections[targetId].onicecandidate = (event) => {
+                    // Use connectionsRef.current here
+                    if (!connectionsRef.current[targetId]) {
+                        connectionsRef.current[targetId] = new RTCPeerConnection(peerConfigConnections);
+                        
+                        connectionsRef.current[targetId].onicecandidate = (event) => {
                             if (event.candidate) socketRef.current.emit("signal", targetId, JSON.stringify({ 'ice': event.candidate }));
                         };
-                        connections[targetId].ontrack = (event) => {
+                        
+                        connectionsRef.current[targetId].ontrack = (event) => {
                             const stream = event.streams[0];
                             setVideos(prev => {
                                 const existing = prev.find(v => v.socketId === targetId);
@@ -217,8 +248,9 @@ export default function VideoMeetComponent() {
                                 return [...prev, { socketId: targetId, stream: stream, username: targetName }];
                             });
                         };
+                        
                         if (window.localStream) {
-                            window.localStream.getTracks().forEach(track => connections[targetId].addTrack(track, window.localStream));
+                            window.localStream.getTracks().forEach(track => connectionsRef.current[targetId].addTrack(track, window.localStream));
                         }
                     }
                 });
@@ -226,9 +258,9 @@ export default function VideoMeetComponent() {
                 if (id === socketIdRef.current) {
                      clients.forEach((client) => {
                          if(client.id !== socketIdRef.current){
-                             connections[client.id].createOffer().then(description => {
-                                 connections[client.id].setLocalDescription(description).then(() => {
-                                     socketRef.current.emit("signal", client.id, JSON.stringify({'sdp': connections[client.id].localDescription}));
+                             connectionsRef.current[client.id].createOffer().then(description => {
+                                 connectionsRef.current[client.id].setLocalDescription(description).then(() => {
+                                     socketRef.current.emit("signal", client.id, JSON.stringify({'sdp': connectionsRef.current[client.id].localDescription}));
                                  });
                              });
                          }
@@ -253,7 +285,10 @@ export default function VideoMeetComponent() {
     const handleEndCall = () => {
         try {
             if(window.localStream) window.localStream.getTracks().forEach(track => track.stop());
-            Object.keys(connections).forEach(key => connections[key].close());
+            Object.keys(connectionsRef.current).forEach(key => {
+                connectionsRef.current[key].close();
+            });
+            connectionsRef.current = {}; // Clear connections
         } catch(e) {}
         routeTo('/home');
     }
@@ -262,11 +297,13 @@ export default function VideoMeetComponent() {
         <div className={styles.meetPageContainer}>
             {askForUsername ? (
                 <div className={styles.lobbyContainer}>
+                    {/* ... (Lobby UI remains unchanged) ... */}
                     <div className={styles.lobbyCard}>
                          <img src="/logo.png" alt="Logo" style={{width:60, borderRadius:12, marginBottom:20}} />
                          <h2 style={{margin:'0 0 20px'}}>Join Meeting</h2>
                          <div className={styles.videoPreview}>
-                             <video ref={localVideoRef} autoPlay muted />
+                             {/* Local Preview */}
+                             <video ref={localVideoRef} autoPlay muted style={{width:'100%', height:'100%', objectFit:'cover'}} />
                         </div>
                         <TextField 
                             fullWidth label="Display Name" 
@@ -280,14 +317,11 @@ export default function VideoMeetComponent() {
                 </div>
             ) : (
                 <div className={styles.conferenceContainer}>
-                    {/* Header */}
                     <div className={styles.header}>
                         <div className={styles.headerBrand}>
                             <img src="/logo.png" alt="Logo" style={{height: 28, borderRadius: 6}} />
                             <span>Juncture</span>
                         </div>
-                        
-                        {/* UPDATED: Copies full URL dynamically */}
                         <Tooltip title="Copy Meeting URL">
                             <div className={styles.meetingCode} onClick={copyToClipboard}>
                                 {meetingCode} <ContentCopyRounded fontSize="small" style={{marginLeft:6, opacity:0.7}} />
@@ -295,28 +329,31 @@ export default function VideoMeetComponent() {
                         </Tooltip>
                     </div>
 
-                    {/* Main Grid */}
                     <div className={styles.mainGrid}>
                         <div className={`${styles.videoArea} ${showModal ? styles.videoAreaShrink : ''}`}>
                              <div className={styles.gridContainer}>
                                 {/* 1. Self View (GRID MODE) */}
                                 {!isPiP && (
-                                    <div className={styles.videoWrapper} onClick={() => setIsPiP(true)}>
-                                        <div className={styles.pinIcon}><PictureInPictureAltRounded /></div>
-                                        <video ref={localVideoRef} autoPlay muted />
-                                        <div className={styles.displayName}>You (Click to Minimize)</div>
-                                    </div>
+                                    // FIX 1 (Part B): Using helper component
+                                    <VideoPlayer 
+                                        stream={window.localStream} 
+                                        username={username} 
+                                        isLocal={true} 
+                                        onPiP={() => setIsPiP(true)}
+                                        isPiPMode={false}
+                                    />
                                 )}
 
                                 {/* 2. Remote Views */}
                                 {videos.map((v) => (
-                                    <div key={v.socketId} className={styles.videoWrapper}>
-                                        <video ref={el => { if(el) el.srcObject = v.stream }} autoPlay />
-                                        <div className={styles.displayName}>{v.username || "User"}</div>
-                                    </div>
+                                    // FIX 1 (Part C): Using helper component for remote videos
+                                    <VideoPlayer 
+                                        key={v.socketId}
+                                        stream={v.stream}
+                                        username={v.username}
+                                    />
                                 ))}
                                 
-                                {/* Empty State */}
                                 {videos.length === 0 && !isPiP && (
                                     <div className={styles.waitingMessage}>Waiting for others...</div>
                                 )}
@@ -325,14 +362,18 @@ export default function VideoMeetComponent() {
 
                         {/* 3. Self View (PiP MODE) */}
                         {isPiP && (
-                            <div className={`${styles.selfViewContainer} ${showModal ? styles.selfViewShift : ''}`} onClick={() => setIsPiP(false)}>
-                                 <div className={styles.pinIcon}><GridViewRounded /></div>
-                                 <video ref={localVideoRef} autoPlay muted />
-                                 <div className={styles.selfName}>You (Click to Expand)</div>
+                            <div className={`${styles.selfViewContainer} ${showModal ? styles.selfViewShift : ''}`}>
+                                 {/* Using VideoPlayer for PiP as well */}
+                                 <VideoPlayer 
+                                    stream={window.localStream} 
+                                    username={username} 
+                                    isLocal={true} 
+                                    onPiP={() => setIsPiP(false)}
+                                    isPiPMode={true}
+                                 />
                             </div>
                         )}
 
-                        {/* Chat */}
                         <div className={`${styles.chatSidebar} ${showModal ? styles.chatOpen : ''}`}>
                             <div className={styles.chatHeader}>
                                 <span>Messages</span>
@@ -358,8 +399,8 @@ export default function VideoMeetComponent() {
                         </div>
                     </div>
 
-                    {/* Controls */}
                     <div className={styles.controls}>
+                        {/* ... (Controls remain the same) ... */}
                         <div className={styles.controlsGroup}>
                             <Tooltip title="Camera">
                                 <IconButton onClick={handleVideoToggle} className={!video ? styles.btnErr : styles.btnDark}>
