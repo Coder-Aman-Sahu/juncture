@@ -40,12 +40,8 @@ export default function Authentication() {
             if(formState===1){
                 let result= await handleRegister(name,username,password);
                 console.log(result);
-                setUsername("");
-                setMessage(result);
-                setOpen(true);
-                setError("");
-                setFormState(0);
-                setPassword("");
+                // Auto-login after successful registration
+                await handleLogin(username, password); 
             }
         }catch(err){
             let message;
