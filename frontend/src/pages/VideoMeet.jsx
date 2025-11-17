@@ -16,18 +16,10 @@ const server_url = `${server}`;
 
 const connections = {};
 const peerConfigConnections = {
-    "iceServers": [
-        { "urls": "stun:stun1.l.google.com:19302" },
-        { 
-            "urls": process.env.TURN_URL, 
-            "username": process.env.TURN_USERNAME, 
-            "credential": "YOUR_PASSWORD" 
-        }
-    ]
+    "iceServers": [{ "urls": "stun:stun1.l.google.com:19302" }]
 }
 
 export default function VideoMeetComponent() {
-    const connections =useRef({});
     const routeTo = useNavigate();
     const { url: meetingCode } = useParams();
     
@@ -172,10 +164,7 @@ export default function VideoMeetComponent() {
 
     // 3. Socket Logic
     const connectToSocketServer = () => {
-        socketRef.current = io.connect(server_url, { 
-            secure: true, // Set to true for HTTPS
-            transports: ['websocket', 'polling'] // Force transports can sometimes help stability
-        });
+        socketRef.current = io.connect(server_url, { secure: false });
         
         socketRef.current.on('signal', (fromId, message) => {
             const signal = JSON.parse(message);
