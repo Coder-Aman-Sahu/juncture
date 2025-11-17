@@ -10,9 +10,15 @@ export default function LandingPage() {
                     <h2>Juncture</h2>
                 </div>
                 <div className="navlist">
-                    <p>Join as Guest</p>
-                    <p>Register</p>
-                    <div role='button'>
+                    <p onClick={() => {
+                        router("/0ugjuq");
+                    }}>Join as Guest</p>
+                    <p onClick={() => {
+                        router("/register");
+                    }}>Register</p>
+                    <div onClick={() => {
+                        router("/auth");
+                    }} role='button'>
                         <p>Login</p>
                     </div>
                 </div>

@@ -1,8 +1,7 @@
-require('dotenv').config();
+import 'dotenv/config';
 import express from "express";
 import {createServer} from "node:http";
 import {Server} from "socket.io";
-
 import mongoose from "mongoose";
 import {connectToSocket} from "./controllers/socketManager.js";
 
