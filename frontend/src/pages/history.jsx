@@ -18,7 +18,14 @@ export default function History() {
         const fetchHistory = async () => {
             try {
                 const history = await getHistoryOfUser();
-                setMeetings(history || []);
+                if (Array.isArray(history)) {
+                    setMeetings(history);
+                } else {
+                    // Handle error (e.g., invalid token)
+                    console.error("Failed to fetch history:", history);
+                    // Optional: Redirect to home or login if token is invalid
+                    // routeTo("/home"); 
+                }
             } catch { }
         }
         fetchHistory();

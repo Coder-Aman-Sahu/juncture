@@ -58,7 +58,11 @@ const getUserHistory = async (req,res) =>{
     const {token} = req.query;
     try{
         const user = await User.findOne({token});
-        const meetings = await Meeting.find({user_id:user.username});
+        if (!user) {
+            return res.status(httpStatus.NOT_FOUND).json({ message: "User not found or invalid token" });
+        }
+
+        const meetings = await Meeting.find({ user_id: user.username });
         res.json(meetings);
     }catch(e){
         res.json({message:`Something went wrong: ${e.message}`});
@@ -71,6 +75,9 @@ const addToHistory = async(req,res) => {
     try{
         const user = await User.findOne({token:token});
 
+        if (!user) {
+            return res.status(httpStatus.NOT_FOUND).json({ message: "User not found or invalid token" });
+        }
         const newMeeting = new Meeting({
             user_id: user.username,
             meetingCode:meeting_code
