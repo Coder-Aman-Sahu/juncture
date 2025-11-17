@@ -15,6 +15,7 @@ export default function History() {
     const routeTo = useNavigate();
 
     useEffect(() => {
+        console.log("HISTORY PAGE LOADED - Fetching now...");
         const fetchHistory = async () => {
             try {
                 const history = await getHistoryOfUser();

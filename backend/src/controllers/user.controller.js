@@ -54,18 +54,20 @@ const register = async (req,res) => {
 
 }
 
-const getUserHistory = async (req,res) =>{
-    const {token} = req.query;
-    try{
-        const user = await User.findOne({token});
+const getUserHistory = async (req, res) => {
+    const { token } = req.query;
+
+    try {
+        const user = await User.findOne({ token: token });
+        
         if (!user) {
-            return res.status(httpStatus.NOT_FOUND).json({ message: "User not found or invalid token" });
+            return res.status(404).json({ message: "User not found or invalid token" });
         }
 
         const meetings = await Meeting.find({ user_id: user.username });
         res.json(meetings);
-    }catch(e){
-        res.json({message:`Something went wrong: ${e.message}`});
+    } catch (e) {
+        res.status(500).json({ message: "Error fetching history" });
     }
 }
 
