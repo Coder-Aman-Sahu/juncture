@@ -14,12 +14,13 @@ import server from '../environment';
 
 const server_url = `${server}`;
 
-const peerConfigConnections = {
-    "iceServers": [{ "urls": "stun:stun1.l.google.com:19302" }]
-}
+// Fallback STUN servers in case the backend fetch fails
+const defaultIceServers = [
+    { "urls": "stun:stun.l.google.com:19302" },
+    { "urls": "stun:stun1.l.google.com:19302" }
+];
 
 // HELPER COMPONENT: Prevents flickering by isolating video rendering
-// This only updates the video source if the 'stream' prop changes
 const VideoPlayer = ({ stream, username, isLocal = false, onPiP, isPiPMode }) => {
     const videoRef = useRef(null);
 
@@ -46,10 +47,8 @@ export default function VideoMeetComponent() {
     const routeTo = useNavigate();
     const { url: meetingCode } = useParams();
     
-    // FIX 2: Move connections INSIDE the component using useRef
-    // This ensures connections are cleared when you leave the page
+    // Refs
     const connectionsRef = useRef({});
-    
     var socketRef = useRef();
     let socketIdRef = useRef();
     let localVideoRef = useRef();
@@ -75,9 +74,6 @@ export default function VideoMeetComponent() {
     
     let [videos, setVideos] = useState([]);
 
-    // FIX 1 (Part A): Removed the `useEffect` that had no dependency array.
-    // We will handle local stream attachment inside the 'getPermissions' or the new VideoPlayer component.
-
     // Auto-scroll chat
     useEffect(() => {
         if (chatScrollRef.current) {
@@ -102,7 +98,6 @@ export default function VideoMeetComponent() {
                 
                 if (userMediaStream) {
                     window.localStream = userMediaStream;
-                    // Manually set ref once initialized
                     if (localVideoRef.current) {
                         localVideoRef.current.srcObject = userMediaStream;
                     }
@@ -142,7 +137,6 @@ export default function VideoMeetComponent() {
                 const stream = await navigator.mediaDevices.getDisplayMedia({ cursor: true });
                 const screenTrack = stream.getVideoTracks()[0];
 
-                // Update all peer connections with the screen track
                 Object.values(connectionsRef.current).forEach(pc => {
                     const sender = pc.getSenders().find(s => s.track.kind === 'video');
                     if(sender) sender.replaceTrack(screenTrack);
@@ -187,8 +181,8 @@ export default function VideoMeetComponent() {
         navigator.clipboard.writeText(window.location.href);
     }
 
-    // 3. Socket Logic
-    const connectToSocketServer = () => {
+    // 3. Socket Logic (UPDATED: Accepts iceServersConfig)
+    const connectToSocketServer = (iceServersConfig) => {
         socketRef.current = io.connect(server_url, { secure: false });
         
         socketRef.current.on('signal', (fromId, message) => {
@@ -232,9 +226,11 @@ export default function VideoMeetComponent() {
                     const targetName = client.username;
                     if (targetId === socketIdRef.current) return;
                     
-                    // Use connectionsRef.current here
                     if (!connectionsRef.current[targetId]) {
-                        connectionsRef.current[targetId] = new RTCPeerConnection(peerConfigConnections);
+                        // UPDATED: Use the passed iceServersConfig
+                        connectionsRef.current[targetId] = new RTCPeerConnection({ 
+                            iceServers: iceServersConfig 
+                        });
                         
                         connectionsRef.current[targetId].onicecandidate = (event) => {
                             if (event.candidate) socketRef.current.emit("signal", targetId, JSON.stringify({ 'ice': event.candidate }));
@@ -270,10 +266,29 @@ export default function VideoMeetComponent() {
         });
     };
 
-    const connect = () => {
+    // 4. Connect Function (UPDATED: Fetches TURN credentials first)
+    const connect = async () => {
         if (!username.trim()) return alert("Name is required");
         setAskForUsername(false);
-        connectToSocketServer();
+
+        try {
+            // Attempt to fetch TURN credentials from your backend
+            const response = await fetch(`${server_url}/api/v1/users/get_turn_credentials`);
+            const data = await response.json();
+
+            if (data.iceServers) {
+                // Success: Use the powerful Twilio servers
+                connectToSocketServer(data.iceServers);
+            } else {
+                // Fallback: Use Google servers
+                connectToSocketServer(defaultIceServers);
+            }
+
+        } catch (err) {
+            console.error("Failed to fetch TURN credentials, using default STUN.", err);
+            // Fallback: Use Google servers
+            connectToSocketServer(defaultIceServers);
+        }
     };
 
     const sendMessage = () => {
@@ -288,7 +303,7 @@ export default function VideoMeetComponent() {
             Object.keys(connectionsRef.current).forEach(key => {
                 connectionsRef.current[key].close();
             });
-            connectionsRef.current = {}; // Clear connections
+            connectionsRef.current = {};
         } catch(e) {}
         routeTo('/home');
     }
@@ -297,12 +312,10 @@ export default function VideoMeetComponent() {
         <div className={styles.meetPageContainer}>
             {askForUsername ? (
                 <div className={styles.lobbyContainer}>
-                    {/* ... (Lobby UI remains unchanged) ... */}
                     <div className={styles.lobbyCard}>
                          <img src="/logo.png" alt="Logo" style={{width:60, borderRadius:12, marginBottom:20}} />
                          <h2 style={{margin:'0 0 20px'}}>Join Meeting</h2>
                          <div className={styles.videoPreview}>
-                             {/* Local Preview */}
                              <video ref={localVideoRef} autoPlay muted style={{width:'100%', height:'100%', objectFit:'cover'}} />
                         </div>
                         <TextField 
@@ -332,9 +345,8 @@ export default function VideoMeetComponent() {
                     <div className={styles.mainGrid}>
                         <div className={`${styles.videoArea} ${showModal ? styles.videoAreaShrink : ''}`}>
                              <div className={styles.gridContainer}>
-                                {/* 1. Self View (GRID MODE) */}
+                                {/* Self View (GRID MODE) */}
                                 {!isPiP && (
-                                    // FIX 1 (Part B): Using helper component
                                     <VideoPlayer 
                                         stream={window.localStream} 
                                         username={username} 
@@ -344,9 +356,8 @@ export default function VideoMeetComponent() {
                                     />
                                 )}
 
-                                {/* 2. Remote Views */}
+                                {/* Remote Views */}
                                 {videos.map((v) => (
-                                    // FIX 1 (Part C): Using helper component for remote videos
                                     <VideoPlayer 
                                         key={v.socketId}
                                         stream={v.stream}
@@ -360,10 +371,9 @@ export default function VideoMeetComponent() {
                              </div>
                         </div>
 
-                        {/* 3. Self View (PiP MODE) */}
+                        {/* Self View (PiP MODE) */}
                         {isPiP && (
                             <div className={`${styles.selfViewContainer} ${showModal ? styles.selfViewShift : ''}`}>
-                                 {/* Using VideoPlayer for PiP as well */}
                                  <VideoPlayer 
                                     stream={window.localStream} 
                                     username={username} 
@@ -400,7 +410,6 @@ export default function VideoMeetComponent() {
                     </div>
 
                     <div className={styles.controls}>
-                        {/* ... (Controls remain the same) ... */}
                         <div className={styles.controlsGroup}>
                             <Tooltip title="Camera">
                                 <IconButton onClick={handleVideoToggle} className={!video ? styles.btnErr : styles.btnDark}>

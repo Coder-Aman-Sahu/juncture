@@ -3,7 +3,7 @@ import {User} from '../models/user.model.js';
 import bcrypt,{hash} from "bcrypt";
 import crypto from "crypto";
 import { Meeting } from "../models/meeting.model.js";
-
+import twilio from "twilio";
 
 const login = async (req,res) => {
     const {username,password} = req.body;
@@ -91,5 +91,25 @@ const addToHistory = async(req,res) => {
     }
 }
 
+const generateTurnCredentials = async (req, res) => {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    
+    if (!accountSid || !authToken) {
+        return res.status(500).json({ message: "Twilio credentials missing on server" });
+    }
 
-export {login,register,getUserHistory,addToHistory};
+    const client = twilio(accountSid, authToken);
+
+    try {
+        // This asks Twilio for a temporary token for the user
+        const token = await client.tokens.create();
+        res.json({ iceServers: token.iceServers });
+    } catch (error) {
+        console.error("Error fetching TURN credentials:", error);
+        res.status(500).json({ message: "Failed to fetch TURN credentials" });
+    }
+};
+
+// Update the export at the bottom
+export { login, register, getUserHistory, addToHistory, generateTurnCredentials };
