@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import io from "socket.io-client";
-import { Badge, IconButton, TextField, Tooltip, Button } from '@mui/material';
+import { Badge, IconButton, TextField, Tooltip, Button, CircularProgress, Snackbar, Alert } from '@mui/material';
 import { 
     VideocamRounded, VideocamOffRounded, MicRounded, MicOffRounded, 
     CallEndRounded, ScreenShareRounded, StopScreenShareRounded, 
     ChatBubbleRounded, SendRounded, CloseRounded, ContentCopyRounded,
     FullscreenRounded, FullscreenExitRounded,
-    PictureInPictureAltRounded, GridViewRounded
+    PictureInPictureAltRounded, GridViewRounded,
+    BackHandRounded, GetAppRounded, Check, Block // Added Check/Block icons
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import styles from "../styles/videoComponent.module.css";
@@ -14,14 +15,30 @@ import server from '../environment';
 
 const server_url = `${server}`;
 
-// Fallback STUN servers in case the backend fetch fails
 const defaultIceServers = [
     { "urls": "stun:stun.l.google.com:19302" },
     { "urls": "stun:stun1.l.google.com:19302" }
 ];
 
-// HELPER COMPONENT: Prevents flickering by isolating video rendering
-const VideoPlayer = ({ stream, username, isLocal = false, onPiP, isPiPMode }) => {
+// 1. HELPER: Timer Hook
+const useMeetingTimer = () => {
+    const [seconds, setSeconds] = useState(0);
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setSeconds(s => s + 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const formatTime = (totalSeconds) => {
+        const minutes = Math.floor(totalSeconds / 60);
+        const secs = totalSeconds % 60;
+        return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+    return formatTime(seconds);
+};
+
+const VideoPlayer = ({ stream, username, isLocal = false, onPiP, isPiPMode, isHandRaised, isMutedRemote }) => {
     const videoRef = useRef(null);
 
     useEffect(() => {
@@ -32,9 +49,13 @@ const VideoPlayer = ({ stream, username, isLocal = false, onPiP, isPiPMode }) =>
 
     return (
         <div className={styles.videoWrapper} onClick={onPiP}>
-            {/* Only show PiP icon if passed */}
             {onPiP && <div className={styles.pinIcon}>{isPiPMode ? <GridViewRounded /> : <PictureInPictureAltRounded />}</div>}
             
+            <div className={styles.statusIcons}>
+                {isMutedRemote && <div className={styles.statusIcon}><MicOffRounded fontSize="small" color="error" /></div>}
+                {isHandRaised && <div className={styles.statusIcon}><BackHandRounded fontSize="small" color="warning" /></div>}
+            </div>
+
             <video ref={videoRef} autoPlay muted={isLocal} />
             <div className={styles.displayName}>
                 {username || "User"} {isLocal && "(You)"}
@@ -46,6 +67,7 @@ const VideoPlayer = ({ stream, username, isLocal = false, onPiP, isPiPMode }) =>
 export default function VideoMeetComponent() {
     const routeTo = useNavigate();
     const { url: meetingCode } = useParams();
+    const timerString = useMeetingTimer(); 
     
     // Refs
     const connectionsRef = useRef({});
@@ -72,16 +94,22 @@ export default function VideoMeetComponent() {
     let [isFullScreen, setIsFullScreen] = useState(false);
     let [isPiP, setIsPiP] = useState(false); 
     
+    // FEATURE STATES
     let [videos, setVideos] = useState([]);
+    let [isWaiting, setIsWaiting] = useState(false); 
+    let [isEntryRejected, setIsEntryRejected] = useState(false); // REJECTION STATE
+    let [isAdmin, setIsAdmin] = useState(false);    
+    let [waitingQueue, setWaitingQueue] = useState([]); 
+    let [handRaised, setHandRaised] = useState(false);
+    let [remoteHands, setRemoteHands] = useState({}); 
+    let [remoteMutes, setRemoteMutes] = useState({}); 
 
-    // Auto-scroll chat
     useEffect(() => {
         if (chatScrollRef.current) {
             chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
         }
     }, [messages, showModal]);
 
-    // 1. Get Permissions & Initial Stream
     const getPermissions = async () => {
         try {
             const videoPermission = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -110,7 +138,6 @@ export default function VideoMeetComponent() {
 
     useEffect(() => { getPermissions(); }, [])
 
-    // 2. Handle Media Toggles
     const handleVideoToggle = () => {
         if(window.localStream) {
             const videoTrack = window.localStream.getVideoTracks()[0];
@@ -127,8 +154,35 @@ export default function VideoMeetComponent() {
             if(audioTrack) {
                 audioTrack.enabled = !audio;
                 setAudio(!audio);
+                socketRef.current.emit("toggle-mute-status", window.location.href, !audio);
             }
         }
+    };
+
+    const handleHandRaise = () => {
+        const newState = !handRaised;
+        setHandRaised(newState);
+        socketRef.current.emit("toggle-hand", window.location.href, newState);
+    };
+
+    const handleAdmitUser = (socketId) => {
+        socketRef.current.emit("admit-user", { roomPath: window.location.href, socketId });
+    };
+
+    const handleRejectUser = (socketId) => {
+        socketRef.current.emit("reject-user", { roomPath: window.location.href, socketId });
+    };
+
+    // 2. HELPER: Chat Download
+    const downloadChat = () => {
+        if (messages.length === 0) return;
+        const chatContent = messages.map(m => `[${m.sender}]: ${m.data}`).join('\n');
+        const blob = new Blob([chatContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `meeting-chat-${new Date().toISOString().slice(0,10)}.txt`;
+        a.click();
     };
 
     const handleScreen = async () => {
@@ -181,7 +235,6 @@ export default function VideoMeetComponent() {
         navigator.clipboard.writeText(window.location.href);
     }
 
-    // 3. Socket Logic (UPDATED: Accepts iceServersConfig)
     const connectToSocketServer = (iceServersConfig) => {
         socketRef.current = io.connect(server_url, { secure: false });
         
@@ -207,6 +260,34 @@ export default function VideoMeetComponent() {
             socketRef.current.emit("join-call", window.location.href, username);
             socketIdRef.current = socketRef.current.id;
 
+            socketRef.current.on("wait-for-admin", () => {
+                setIsWaiting(true);
+            });
+            
+            socketRef.current.on("entry-accepted", () => {
+                setIsWaiting(false);
+            });
+
+            // NEW: Handle Rejection
+            socketRef.current.on("entry-rejected", () => {
+                setIsWaiting(false);
+                setIsEntryRejected(true);
+            });
+
+            socketRef.current.on("you-are-admin", () => {
+                setIsAdmin(true);
+            });
+            socketRef.current.on("user-waiting", (queue) => {
+                setWaitingQueue(queue); 
+            });
+
+            socketRef.current.on("hand-update", (id, state) => {
+                setRemoteHands(prev => ({ ...prev, [id]: state }));
+            });
+            socketRef.current.on("mute-update", (id, state) => {
+                setRemoteMutes(prev => ({ ...prev, [id]: state }));
+            });
+
             socketRef.current.on("chat-message", (data, sender, socketIdSender) => {
                 setMessages(prev => [...prev, { sender, data }]);
                 if (socketIdSender !== socketIdRef.current) setNewMessages(prev => prev + 1);
@@ -218,6 +299,8 @@ export default function VideoMeetComponent() {
                     connectionsRef.current[id].close();
                     delete connectionsRef.current[id];
                 }
+                setRemoteHands(prev => { const n = {...prev}; delete n[id]; return n; });
+                setRemoteMutes(prev => { const n = {...prev}; delete n[id]; return n; });
             });
 
             socketRef.current.on("user-joined", (id, clients) => {
@@ -227,7 +310,6 @@ export default function VideoMeetComponent() {
                     if (targetId === socketIdRef.current) return;
                     
                     if (!connectionsRef.current[targetId]) {
-                        // UPDATED: Use the passed iceServersConfig
                         connectionsRef.current[targetId] = new RTCPeerConnection({ 
                             iceServers: iceServersConfig 
                         });
@@ -266,27 +348,20 @@ export default function VideoMeetComponent() {
         });
     };
 
-    // 4. Connect Function (UPDATED: Fetches TURN credentials first)
     const connect = async () => {
         if (!username.trim()) return alert("Name is required");
         setAskForUsername(false);
 
         try {
-            // Attempt to fetch TURN credentials from your backend
             const response = await fetch(`${server_url}/api/v1/users/get_turn_credentials`);
             const data = await response.json();
-
             if (data.iceServers) {
-                // Success: Use the powerful Twilio servers
                 connectToSocketServer(data.iceServers);
             } else {
-                // Fallback: Use Google servers
                 connectToSocketServer(defaultIceServers);
             }
-
         } catch (err) {
             console.error("Failed to fetch TURN credentials, using default STUN.", err);
-            // Fallback: Use Google servers
             connectToSocketServer(defaultIceServers);
         }
     };
@@ -306,6 +381,39 @@ export default function VideoMeetComponent() {
             connectionsRef.current = {};
         } catch(e) {}
         routeTo('/home');
+    }
+
+    // 3. SCREEN: Rejected
+    if (isEntryRejected) {
+        return (
+            <div className={styles.lobbyContainer}>
+                 <div className={styles.lobbyCard} style={{textAlign:'center'}}>
+                    <Block style={{fontSize: 60, color: '#e53935', marginBottom: 20}} />
+                    <h2>Access Denied</h2>
+                    <p>The host has not approved your request to join this meeting.</p>
+                    <Button 
+                        variant="outlined" 
+                        onClick={() => routeTo('/home')}
+                        style={{marginTop: 20}}
+                    >
+                        Go Back Home
+                    </Button>
+                 </div>
+            </div>
+        )
+    }
+
+    // 4. SCREEN: Waiting
+    if (isWaiting) {
+        return (
+            <div className={styles.lobbyContainer}>
+                 <div className={styles.lobbyCard} style={{textAlign:'center'}}>
+                    <CircularProgress color="inherit" style={{marginBottom:20}} />
+                    <h2>Waiting for host to admit you...</h2>
+                    <p>Please stay on this screen.</p>
+                 </div>
+            </div>
+        )
     }
 
     return (
@@ -330,11 +438,64 @@ export default function VideoMeetComponent() {
                 </div>
             ) : (
                 <div className={styles.conferenceContainer}>
+                    
+                    {/* 5. ADMIN NOTIFICATION UI */}
+                    {isAdmin && waitingQueue.length > 0 && (
+                         <Snackbar open={true} anchorOrigin={{vertical:'top', horizontal:'center'}}>
+                             <Alert 
+                                severity="info" 
+                                variant="filled" 
+                                icon={false} // Remove default icon for cleaner look
+                                sx={{ 
+                                    width: '100%', 
+                                    display: 'flex', 
+                                    alignItems: 'center',
+                                    '& .MuiAlert-message': { width: '100%' }
+                                }}
+                             >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 300 }}>
+                                    <span style={{ fontWeight: 500 }}>
+                                        {waitingQueue[0].username} wants to join
+                                    </span>
+                                    <div style={{ display: 'flex', gap: 8, marginLeft: 16 }}>
+                                        <Button 
+                                            variant="contained" 
+                                            size="small" 
+                                            color="success"
+                                            startIcon={<Check />}
+                                            onClick={() => handleAdmitUser(waitingQueue[0].id)}
+                                            style={{ backgroundColor: '#4caf50', color: 'white' }}
+                                        >
+                                            Admit
+                                        </Button>
+                                        <Button 
+                                            variant="contained" 
+                                            size="small" 
+                                            color="error"
+                                            startIcon={<Block />}
+                                            onClick={() => handleRejectUser(waitingQueue[0].id)}
+                                            style={{ backgroundColor: '#ef5350', color: 'white' }}
+                                        >
+                                            Deny
+                                        </Button>
+                                    </div>
+                                </div>
+                             </Alert>
+                         </Snackbar>
+                    )}
+
                     <div className={styles.header}>
                         <div className={styles.headerBrand}>
                             <img src="/logo.png" alt="Logo" style={{height: 28, borderRadius: 6}} />
                             <span>Juncture</span>
+                            {isAdmin && <Badge badgeContent="Host" color="primary" style={{marginLeft:10}} />}
                         </div>
+                        
+                        {/* TIMER DISPLAY */}
+                        <div style={{ color: 'white', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '1.1rem' }}>
+                            {timerString}
+                        </div>
+
                         <Tooltip title="Copy Meeting URL">
                             <div className={styles.meetingCode} onClick={copyToClipboard}>
                                 {meetingCode} <ContentCopyRounded fontSize="small" style={{marginLeft:6, opacity:0.7}} />
@@ -345,7 +506,7 @@ export default function VideoMeetComponent() {
                     <div className={styles.mainGrid}>
                         <div className={`${styles.videoArea} ${showModal ? styles.videoAreaShrink : ''}`}>
                              <div className={styles.gridContainer}>
-                                {/* Self View (GRID MODE) */}
+                                {/* Self View */}
                                 {!isPiP && (
                                     <VideoPlayer 
                                         stream={window.localStream} 
@@ -353,6 +514,8 @@ export default function VideoMeetComponent() {
                                         isLocal={true} 
                                         onPiP={() => setIsPiP(true)}
                                         isPiPMode={false}
+                                        isHandRaised={handRaised}
+                                        isMutedRemote={!audio}
                                     />
                                 )}
 
@@ -362,6 +525,8 @@ export default function VideoMeetComponent() {
                                         key={v.socketId}
                                         stream={v.stream}
                                         username={v.username}
+                                        isHandRaised={remoteHands[v.socketId]}
+                                        isMutedRemote={remoteMutes[v.socketId]}
                                     />
                                 ))}
                                 
@@ -371,7 +536,6 @@ export default function VideoMeetComponent() {
                              </div>
                         </div>
 
-                        {/* Self View (PiP MODE) */}
                         {isPiP && (
                             <div className={`${styles.selfViewContainer} ${showModal ? styles.selfViewShift : ''}`}>
                                  <VideoPlayer 
@@ -380,6 +544,8 @@ export default function VideoMeetComponent() {
                                     isLocal={true} 
                                     onPiP={() => setIsPiP(false)}
                                     isPiPMode={true}
+                                    isHandRaised={handRaised}
+                                    isMutedRemote={!audio}
                                  />
                             </div>
                         )}
@@ -387,7 +553,14 @@ export default function VideoMeetComponent() {
                         <div className={`${styles.chatSidebar} ${showModal ? styles.chatOpen : ''}`}>
                             <div className={styles.chatHeader}>
                                 <span>Messages</span>
-                                <IconButton onClick={() => setModal(false)} size="small"><CloseRounded /></IconButton>
+                                <div>
+                                    <Tooltip title="Save Chat">
+                                        <IconButton onClick={downloadChat} size="small" style={{color:'white'}}>
+                                            <GetAppRounded />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <IconButton onClick={() => setModal(false)} size="small"><CloseRounded /></IconButton>
+                                </div>
                             </div>
                             <div className={styles.chatBody} ref={chatScrollRef}>
                                 {messages.map((msg, i) => (
@@ -428,6 +601,13 @@ export default function VideoMeetComponent() {
                                     </IconButton>
                                 </Tooltip>
                             )}
+                            
+                            <Tooltip title="Raise Hand">
+                                <IconButton onClick={handleHandRaise} className={handRaised ? styles.btnActive : styles.btnDark}>
+                                    <BackHandRounded />
+                                </IconButton>
+                            </Tooltip>
+
                             <Tooltip title={showModal ? "Hide Chat" : "Show Chat"}>
                                 <Badge badgeContent={newMessages} color="error">
                                     <IconButton onClick={() => {setModal(!showModal); setNewMessages(0)}} className={showModal ? styles.btnActive : styles.btnDark}>
